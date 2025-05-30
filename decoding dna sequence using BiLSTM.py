@@ -43,3 +43,23 @@ def preprocess_data(df):
     
     return X_combined, y_binary, error_true
 
+# Metrics
+def bit_error_rate(y_true, y_pred):
+    y_true_float = K.cast(y_true, 'float32')
+    y_pred_binary = K.cast(K.greater(y_pred, 0.5), 'float32')
+    return K.mean(K.not_equal(y_true_float, y_pred_binary))
+
+def error_localization_accuracy(y_true, y_pred):
+    y_true_float = K.cast(y_true, 'float32')
+    y_pred_binary = K.cast(K.greater(y_pred, 0.5), 'float32')
+    return K.mean(K.equal(y_true_float, y_pred_binary))
+
+def focal_loss(y_true, y_pred, gamma=2.0, alpha=0.1):
+    y_true = K.cast(y_true, 'float32')
+    y_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())
+    alpha_weight = alpha * y_true + (1 - alpha) * (1 - y_true)
+    p_t = y_true * y_pred + (1 - y_true) * (1 - y_pred)
+    focal_weight = K.pow(1 - p_t, gamma)
+    ce_loss = -K.log(p_t)
+    return K.mean(alpha_weight * focal_weight * ce_loss)
+
