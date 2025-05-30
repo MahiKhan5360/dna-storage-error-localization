@@ -63,3 +63,49 @@ def focal_loss(y_true, y_pred, gamma=2.0, alpha=0.1):
     ce_loss = -K.log(p_t)
     return K.mean(alpha_weight * focal_weight * ce_loss)
 
+# Transformer Block (Increased Dropout)
+def transformer_block(x, num_heads, ff_dim, dropout=0.2):
+    attn_output = MultiHeadAttention(num_heads=num_heads, key_dim=config.EMBEDDING_DIM // num_heads)(x, x)
+    attn_output = Dropout(dropout)(attn_output)
+    out1 = Add()([x, attn_output])
+    out1 = LayerNormalization(epsilon=1e-6)(out1)
+    ffn_output = Dense(ff_dim, activation='relu')(out1)
+    ffn_output = Dense(config.EMBEDDING_DIM)(ffn_output)
+    ffn_output = Dropout(dropout)(ffn_output)
+    out2 = Add()([out1, ffn_output])
+    return LayerNormalization(epsilon=1e-6)(out2)
+
+# Model (Simplified and Adjusted)
+def build_model():
+    inputs = Input(shape=(1, config.MAX_DNA_LENGTH))
+    x = Embedding(input_dim=config.VOCAB_SIZE, output_dim=config.EMBEDDING_DIM)(inputs[:, 0, :])
+    for _ in range(config.NUM_TRANSFORMER_BLOCKS):
+        x = transformer_block(x, config.NUM_HEADS, config.FF_DIM, config.DROPOUT_RATE)
+    
+    binary_x = Bidirectional(LSTM(128, return_sequences=True))(x)
+    binary_x = Bidirectional(LSTM(64))(binary_x)
+    binary_x = Dense(512, activation='relu')(binary_x)
+    binary_x = BatchNormalization()(binary_x)
+    binary_x = Dropout(0.4)(binary_x)  # Increased from 0.3
+    binary_out = Dense(config.BINARY_LENGTH, activation='sigmoid', name='binary_out')(binary_x)
+    
+    error_x = Bidirectional(LSTM(128, return_sequences=True))(x)
+    error_x = Conv1D(64, 3, activation='relu', padding='same')(error_x)
+    error_x = BatchNormalization()(error_x)
+    error_loc = Conv1D(1, 1, activation='sigmoid', name='error_loc')(error_x)
+    error_loc = Flatten(name='error_loc_flatten')(error_loc)
+    
+    model = Model(inputs=inputs, outputs={'binary_out': binary_out, 'error_loc': error_loc})
+    model.output_names = ['binary_out', 'error_loc']
+    
+    model.compile(
+        optimizer=Adam(learning_rate=0.001, clipvalue=0.5),  # Tighter clipping from 1.0
+        loss={'binary_out': 'binary_crossentropy', 'error_loc': focal_loss},
+        loss_weights={'binary_out': 2.0, 'error_loc': 1.0},  # Prioritize BER
+        metrics={
+            'binary_out': [bit_error_rate],
+            'error_loc': [error_localization_accuracy]
+        }
+    )
+    return model
+
