@@ -108,4 +108,104 @@ def build_model():
         }
     )
     return model
+# Evaluation (Unchanged)
+def evaluate_model(model, X_test, y_binary_test, y_error_test):
+    y_pred_dict = model.predict(X_test)
+    y_pred = y_pred_dict['binary_out']
+    error_pred = y_pred_dict['error_loc']
+    
+    ber = np.mean(y_binary_test != (y_pred > 0.5).astype(int))
+    ela = np.mean((error_pred > 0.5).astype(int) == y_error_test)
+    error_f1 = f1_score(y_error_test.flatten(), (error_pred > 0.5).astype(int).flatten())
+    
+    print(f"Bit Error Rate (BER): {ber:.4f}")
+    print(f"Error Localization Accuracy (ELA): {ela:.4f}")
+    print(f"Error Localization F1 Score: {error_f1:.4f}")
+    return ber, ela, error_f1
+
+# Visualization (Unchanged)
+def visualize_error_prediction(model, X_sample, y_error_true, sample_idx=0):
+    y_pred_dict = model.predict(X_sample[sample_idx:sample_idx+1])
+    error_pred = y_pred_dict['error_loc'][0]
+    error_true = y_error_true[sample_idx]
+    
+    plt.figure(figsize=(15, 4))
+    plt.plot(error_pred, label='Predicted Error Probability', alpha=0.7)
+    plt.scatter(range(len(error_true)), error_true, color='red', label='True Error', alpha=0.5, marker='o')
+    correct_identification = (error_pred > 0.5).astype(int) == error_true
+    plt.scatter(range(len(error_true)), [0.5] * len(error_true),
+                color=['green' if c else 'orange' for c in correct_identification],
+                marker='|', alpha=0.7, label='Prediction Correctness')
+    plt.xlabel('Position in DNA Sequence')
+    plt.ylabel('Error Probability')
+    plt.title('Error Localization Visualization')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.show()
+
+# Data Analysis (Unchanged)
+def analyze_error_patterns(df):
+    error_counts = []
+    error_positions = []
+    for i in range(min(1000, len(df))):
+        dna = df['DNA'].iloc[i][:config.MAX_DNA_LENGTH]
+        noisy = df['Noisy_DNA'].iloc[i][:config.MAX_DNA_LENGTH]
+        errors = 0
+        positions = []
+        for j in range(min(len(dna), len(noisy))):
+            if dna[j] != noisy[j]:
+                errors += 1
+                positions.append(j)
+        error_counts.append(errors)
+        error_positions.extend(positions)
+    
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.hist(error_counts, bins=20)
+    plt.title('Error Count Distribution')
+    plt.xlabel('Number of Errors per Sequence')
+    plt.ylabel('Frequency')
+    plt.subplot(1, 2, 2)
+    plt.hist(error_positions, bins=50)
+    plt.title('Error Position Distribution')
+    plt.xlabel('Position in DNA Sequence')
+    plt.ylabel('Frequency')
+    plt.tight_layout()
+    plt.show()
+    
+    return {
+        'mean_errors': np.mean(error_counts),
+        'median_errors': np.median(error_counts),
+        'max_errors': np.max(error_counts),
+        'error_rate': np.mean(error_counts) / config.MAX_DNA_LENGTH
+    }
+
+# Main
+data = pd.read_csv("/kaggle/input/dna-storage-dataset-5percent-noise/dna_storage_dataset_5percent_noise.csv")
+X_combined, y_binary, error_true = preprocess_data(data)
+X_train, X_test, y_train, y_test, error_train, error_test = train_test_split(
+    X_combined, y_binary, error_true, test_size=0.2, random_state=42
+)
+
+model = build_model()
+model.summary()
+
+early_stopping = EarlyStopping(monitor='val_loss', patience=10, mode='min', restore_best_weights=True, verbose=1)
+warmup_scheduler = LearningRateScheduler(
+    lambda epoch, lr: 0.0005 * (epoch + 1) / 15 if epoch < 15 else 0.0005 * 0.75 * (1 + np.cos(np.pi * (epoch - 15) / 35)),
+    verbose=1
+)
+
+history = model.fit(
+    X_train, {'binary_out': y_train, 'error_loc': error_train},
+    epochs=config.EPOCHS,
+    batch_size=config.BATCH_SIZE,
+    validation_split=0.2,
+    callbacks=[warmup_scheduler, early_stopping]
+)
+
+ber, ela, error_f1 = evaluate_model(model, X_test, y_test, error_test)
+visualize_error_prediction(model, X_test, error_test, sample_idx=0)
+error_stats = analyze_error_patterns(data)
+print("Error Pattern Analysis:", error_stats)
 
