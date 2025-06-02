@@ -135,4 +135,24 @@ def build_model():
         }
     )
     return model
+# Evaluation
+
+def evaluate_model(model, X_test, y_binary_test, y_error_test):
+    y_pred_dict = model.predict(X_test)
+    y_pred = y_pred_dict['binary_out']
+    error_pred = y_pred_dict['error_loc']
+
+    ber = np.mean(y_binary_test != (y_pred > 0.5).astype(int))
+    ela = np.mean((error_pred > 0.5).astype(int) == y_error_test)
+    error_f1 = f1_score(y_error_test.flatten(), (error_pred > 0.5).astype(int).flatten())
+
+    print(f"Bit Error Rate (BER): {ber:.4f}")
+    print(f"Error Localization Accuracy (ELA): {ela:.4f}")
+    print(f"Error Localization F1 Score: {error_f1:.4f}")
+    return ber, ela, error_f1
+
+
+
+
+
 
