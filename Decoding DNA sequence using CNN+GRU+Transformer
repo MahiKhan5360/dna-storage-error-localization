@@ -152,6 +152,26 @@ def evaluate_model(model, X_test, y_binary_test, y_error_test):
     return ber, ela, error_f1
 
 
+# Visualization
+
+def visualize_error_prediction(model, X_sample, y_error_true, sample_idx=0):
+    y_pred_dict = model.predict(X_sample[sample_idx:sample_idx+1])
+    error_pred = y_pred_dict['error_loc'][0]
+    error_true = y_error_true[sample_idx]
+
+    plt.figure(figsize=(15, 4))
+    plt.plot(error_pred, label='Predicted Error Probability', alpha=0.7)
+    plt.scatter(range(len(error_true)), error_true, color='red', label='True Error', alpha=0.5, marker='o')
+    correct_identification = (error_pred > 0.5).astype(int) == error_true
+    plt.scatter(range(len(error_true)), [0.5] * len(error_true),
+                color=['green' if c else 'orange' for c in correct_identification],
+                marker='|', alpha=0.7, label='Prediction Correctness')
+    plt.xlabel('Position in DNA Sequence')
+    plt.ylabel('Error Probability')
+    plt.title('Error Localization Visualization')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.show()
 
 
 
