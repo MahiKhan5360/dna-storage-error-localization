@@ -57,4 +57,210 @@ def preprocess_data(df):
                            for n_seq, c_seq in zip(df["Noisy_DNA"], df["DNA"])] )
 
     return X_combined, y_binary, error_true
+# Metrics
+
+def bit_error_rate(y_true, y_pred):
+    y_true_float = K.cast(y_true, 'float32')
+    y_pred_binary = K.cast(K.greater(y_pred, 0.5), 'float32')
+    return K.mean(K.not_equal(y_true_float, y_pred_binary))
+
+def error_localization_accuracy(y_true, y_pred):
+    y_true_float = K.cast(y_true, 'float32')
+    y_pred_binary = K.cast(K.greater(y_pred, 0.5), 'float32')
+    return K.mean(K.equal(y_true_float, y_pred_binary))
+
+def focal_loss(y_true, y_pred, gamma=2.0, alpha=0.1):
+    y_true = K.cast(y_true, 'float32')
+    y_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())
+    alpha_weight = alpha * y_true + (1 - alpha) * (1 - y_true)
+    p_t = y_true * y_pred + (1 - y_true) * (1 - y_pred)
+    focal_weight = K.pow(1 - p_t, gamma)
+    ce_loss = -K.log(p_t)
+    return K.mean(alpha_weight * focal_weight * ce_loss)
+
+# Transformer Block
+
+def transformer_block(x, num_heads, ff_dim, dropout=0.2):
+    attn_output = MultiHeadAttention(num_heads=num_heads, key_dim=config.EMBEDDING_DIM // num_heads)(x, x)
+    attn_output = Dropout(dropout)(attn_output)
+    out1 = Add()([x, attn_output])
+    out1 = LayerNormalization(epsilon=1e-6)(out1)
+    ffn_output = Dense(ff_dim, activation='relu')(out1)
+    ffn_output = Dense(config.EMBEDDING_DIM)(ffn_output)
+    ffn_output = Dropout(dropout)(ffn_output)
+    out2 = Add()([out1, ffn_output])
+    return LayerNormalization(epsilon=1e-6)(out2)
+
+# Model (CNN + Transformer + BiGRU)
+
+def build_model():
+    inputs = Input(shape=(1, config.MAX_DNA_LENGTH))
+    x = Embedding(input_dim=config.VOCAB_SIZE, output_dim=config.EMBEDDING_DIM)(inputs[:, 0, :])
+
+    # CNN layer to extract local motifs
+    x = Conv1D(config.EMBEDDING_DIM, 5, padding='same', activation='relu')(x)
+    x = MaxPooling1D(pool_size=2)(x)
+
+    # Transformer blocks
+    for _ in range(config.NUM_TRANSFORMER_BLOCKS):
+        x = transformer_block(x, config.NUM_HEADS, config.FF_DIM, config.DROPOUT_RATE)
+
+    # BiGRU for sequence summarization
+    x = Bidirectional(GRU(128, return_sequences=True))(x)
+
+    # Binary prediction head
+    binary_x = Bidirectional(GRU(64))(x)
+    binary_x = Dense(256, activation='relu')(binary_x)
+    binary_x = BatchNormalization()(binary_x)
+    binary_x = Dropout(0.4)(binary_x)
+    binary_out = Dense(config.BINARY_LENGTH, activation='sigmoid', name='binary_out')(binary_x)
+
+    # Error localization head
+    error_x = UpSampling1D(size=2)(x)  # 75 → 150
+    error_x = Conv1D(64, 3, activation='relu', padding='same')(error_x)
+    error_x = BatchNormalization()(error_x)
+    error_loc = Conv1D(1, 1, activation='sigmoid', name='error_loc')(error_x)
+    error_loc = Flatten(name='error_loc_flatten')(error_loc)
+
+    model = Model(inputs=inputs, outputs={'binary_out': binary_out, 'error_loc': error_loc})
+    model.output_names = ['binary_out', 'error_loc']
+
+    model.compile(
+        optimizer=Adam(learning_rate=0.001, clipvalue=0.5),
+        loss={'binary_out': 'binary_crossentropy', 'error_loc': focal_loss},
+        loss_weights={'binary_out': 2.0, 'error_loc': 1.0},
+        metrics={
+            'binary_out': [bit_error_rate],
+            'error_loc': [error_localization_accuracy]
+        }
+    )
+    return model
+
+# Evaluation
+
+def evaluate_model(model, X_test, y_binary_test, y_error_test):
+    y_pred_dict = model.predict(X_test)
+    y_pred = y_pred_dict['binary_out']
+    error_pred = y_pred_dict['error_loc']
+
+    ber = np.mean(y_binary_test != (y_pred > 0.5).astype(int))
+    ela = np.mean((error_pred > 0.5).astype(int) == y_error_test)
+    error_f1 = f1_score(y_error_test.flatten(), (error_pred > 0.5).astype(int).flatten())
+
+    print(f"Bit Error Rate (BER): {ber:.4f}")
+    print(f"Error Localization Accuracy (ELA): {ela:.4f}")
+    print(f"Error Localization F1 Score: {error_f1:.4f}")
+    return ber, ela, error_f1
+
+# Visualization
+
+def visualize_error_prediction(model, X_sample, y_error_true, sample_idx=0):
+    y_pred_dict = model.predict(X_sample[sample_idx:sample_idx+1])
+    error_pred = y_pred_dict['error_loc'][0]
+    error_true = y_error_true[sample_idx]
+
+    plt.figure(figsize=(15, 4))
+    plt.plot(error_pred, label='Predicted Error Probability', alpha=0.7)
+    plt.scatter(range(len(error_true)), error_true, color='red', label='True Error', alpha=0.5, marker='o')
+    correct_identification = (error_pred > 0.5).astype(int) == error_true
+    plt.scatter(range(len(error_true)), [0.5] * len(error_true),
+                color=['green' if c else 'orange' for c in correct_identification],
+                marker='|', alpha=0.7, label='Prediction Correctness')
+    plt.xlabel('Position in DNA Sequence')
+    plt.ylabel('Error Probability')
+    plt.title('Error Localization Visualization')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.show()
+
+# Error Pattern Analysis
+
+def analyze_error_patterns(df):
+    error_counts = []
+    error_positions = []
+    for i in range(min(1000, len(df))):
+        dna = df['DNA'].iloc[i][:config.MAX_DNA_LENGTH]
+        noisy = df['Noisy_DNA'].iloc[i][:config.MAX_DNA_LENGTH]
+        errors = 0
+        positions = []
+        for j in range(min(len(dna), len(noisy))):
+            if dna[j] != noisy[j]:
+                errors += 1
+                positions.append(j)
+        error_counts.append(errors)
+        error_positions.extend(positions)
+
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.hist(error_counts, bins=20)
+    plt.title('Error Count Distribution')
+    plt.xlabel('Number of Errors per Sequence')
+    plt.ylabel('Frequency')
+    plt.subplot(1, 2, 2)
+    plt.hist(error_positions, bins=50)
+    plt.title('Error Position Distribution')
+    plt.xlabel('Position in DNA Sequence')
+    plt.ylabel('Frequency')
+    plt.tight_layout()
+    plt.show()
+
+    return {
+        'mean_errors': np.mean(error_counts),
+        'median_errors': np.median(error_counts),
+        'max_errors': np.max(error_counts),
+        'error_rate': np.mean(error_counts) / config.MAX_DNA_LENGTH
+    }
+
+# Main
+
+data = pd.read_csv("/kaggle/input/dna-storage-dataset-5percent-noise/dna_storage_dataset_5percent_noise.csv")
+X_combined, y_binary, error_true = preprocess_data(data)
+X_train, X_test, y_train, y_test, error_train, error_test = train_test_split(
+    X_combined, y_binary, error_true, test_size=0.2, random_state=42
+)
+
+model = build_model()
+model.summary()
+
+early_stopping = EarlyStopping(monitor='val_loss', patience=10, mode='min', restore_best_weights=True, verbose=1)
+warmup_scheduler = LearningRateScheduler(
+    lambda epoch, lr: 0.0005 * (epoch + 1) / 15 if epoch < 15 else 0.0005 * 0.75 * (1 + np.cos(np.pi * (epoch - 15) / 35)),
+    verbose=1
+)
+
+history = model.fit(
+    X_train, {'binary_out': y_train, 'error_loc': error_train},
+    epochs=config.EPOCHS,
+    batch_size=config.BATCH_SIZE,
+    validation_split=0.2,
+    callbacks=[warmup_scheduler, early_stopping]
+)
+
+ber, ela, error_f1 = evaluate_model(model, X_test, y_test, error_test)
+visualize_error_prediction(model, X_test, error_test, sample_idx=0)
+error_stats = analyze_error_patterns(data)
+print("Error Pattern Analysis:", error_stats)
+
+# Training History Plot
+
+fig, axes = plt.subplots(2, 1, figsize=(12, 10))
+axes[0].semilogy(history.history['binary_out_bit_error_rate'], label='Training BER')
+axes[0].semilogy(history.history['val_binary_out_bit_error_rate'], label='Validation BER')
+axes[0].set_xlabel('Epoch')
+axes[0].set_ylabel('BER (log scale)')
+axes[0].set_title('Hybrid Model BER')
+axes[0].legend()
+axes[0].grid(True, which="both", ls="--")
+axes[1].plot(history.history['error_loc_error_localization_accuracy'], label='Training ELA')
+axes[1].plot(history.history['val_error_loc_error_localization_accuracy'], label='Validation ELA')
+axes[1].set_xlabel('Epoch')
+axes[1].set_ylabel('ELA')
+axes[1].set_title('Hybrid Model ELA')
+axes[1].legend()
+axes[1].grid(True)
+plt.tight_layout()
+plt.savefig('hybrid_transformer_bigru_cnn.png', dpi=300)
+plt.show()
+
+
 
