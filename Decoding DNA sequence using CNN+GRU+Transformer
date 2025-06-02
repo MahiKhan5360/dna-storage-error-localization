@@ -91,3 +91,48 @@ def transformer_block(x, num_heads, ff_dim, dropout=0.2):
     out2 = Add()([out1, ffn_output])
     return LayerNormalization(epsilon=1e-6)(out2)
 
+# Model (CNN + Transformer + BiGRU)
+
+def build_model():
+    inputs = Input(shape=(1, config.MAX_DNA_LENGTH))
+    x = Embedding(input_dim=config.VOCAB_SIZE, output_dim=config.EMBEDDING_DIM)(inputs[:, 0, :])
+
+    # CNN layer to extract local motifs
+    x = Conv1D(config.EMBEDDING_DIM, 5, padding='same', activation='relu')(x)
+    x = MaxPooling1D(pool_size=2)(x)
+
+    # Transformer blocks
+    for _ in range(config.NUM_TRANSFORMER_BLOCKS):
+        x = transformer_block(x, config.NUM_HEADS, config.FF_DIM, config.DROPOUT_RATE)
+
+    # BiGRU for sequence summarization
+    x = Bidirectional(GRU(128, return_sequences=True))(x)
+
+    # Binary prediction head
+    binary_x = Bidirectional(GRU(64))(x)
+    binary_x = Dense(256, activation='relu')(binary_x)
+    binary_x = BatchNormalization()(binary_x)
+    binary_x = Dropout(0.4)(binary_x)
+    binary_out = Dense(config.BINARY_LENGTH, activation='sigmoid', name='binary_out')(binary_x)
+
+    # Error localization head
+    error_x = UpSampling1D(size=2)(x)  # 75 → 150
+    error_x = Conv1D(64, 3, activation='relu', padding='same')(error_x)
+    error_x = BatchNormalization()(error_x)
+    error_loc = Conv1D(1, 1, activation='sigmoid', name='error_loc')(error_x)
+    error_loc = Flatten(name='error_loc_flatten')(error_loc)
+
+    model = Model(inputs=inputs, outputs={'binary_out': binary_out, 'error_loc': error_loc})
+    model.output_names = ['binary_out', 'error_loc']
+
+    model.compile(
+        optimizer=Adam(learning_rate=0.001, clipvalue=0.5),
+        loss={'binary_out': 'binary_crossentropy', 'error_loc': focal_loss},
+        loss_weights={'binary_out': 2.0, 'error_loc': 1.0},
+        metrics={
+            'binary_out': [bit_error_rate],
+            'error_loc': [error_localization_accuracy]
+        }
+    )
+    return model
+
