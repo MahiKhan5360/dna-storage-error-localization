@@ -30,4 +30,13 @@ from tensorflow.keras.callbacks import EarlyStopping, LearningRateScheduler
 from tensorflow.keras import backend as K
 import matplotlib.pyplot as plt
 from sklearn.metrics import f1_score
+# Configuration
+class Config:
+    VOCAB_SIZE = 5  # A, G, C, T + PAD
+    MAX_DNA_LENGTH = 150
+    BINARY_LENGTH = 300
+    EMBEDDING_DIM = 128
+    BATCH_SIZE = 64
+    EPOCHS = 50
+config = Config()
 
