@@ -211,5 +211,24 @@ def analyze_error_patterns(df):
         'error_rate': np.mean(error_counts) / config.MAX_DNA_LENGTH
     }
 
+# Main
+
+data = pd.read_csv("/kaggle/input/dna-storage-dataset-5percent-noise/dna_storage_dataset_5percent_noise.csv")
+X_combined, y_binary, error_true = preprocess_data(data)
+X_train, X_test, y_train, y_test, error_train, error_test = train_test_split(
+    X_combined, y_binary, error_true, test_size=0.2, random_state=42
+)
+
+model = build_model()
+model.summary()
+
+early_stopping = EarlyStopping(monitor='val_loss', patience=10, mode='min', restore_best_weights=True, verbose=1)
+warmup_scheduler = LearningRateScheduler(
+    lambda epoch, lr: 0.0005 * (epoch + 1) / 15 if epoch < 15 else 0.0005 * 0.75 * (1 + np.cos(np.pi * (epoch - 15) / 35)),
+    verbose=1
+)
+
+
+
 
 
