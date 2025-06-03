@@ -228,7 +228,11 @@ warmup_scheduler = LearningRateScheduler(
     verbose=1
 )
 
-
-
-
+history = model.fit(
+    X_train, {'binary_out': y_train, 'error_loc': error_train},
+    epochs=config.EPOCHS,
+    batch_size=config.BATCH_SIZE,
+    validation_split=0.2,
+    callbacks=[warmup_scheduler, early_stopping]
+)
 
