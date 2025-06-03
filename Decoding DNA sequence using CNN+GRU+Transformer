@@ -236,3 +236,8 @@ history = model.fit(
     callbacks=[warmup_scheduler, early_stopping]
 )
 
+ber, ela, error_f1 = evaluate_model(model, X_test, y_test, error_test)
+visualize_error_prediction(model, X_test, error_test, sample_idx=0)
+error_stats = analyze_error_patterns(data)
+print("Error Pattern Analysis:", error_stats)
+
