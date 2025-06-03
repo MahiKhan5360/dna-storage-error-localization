@@ -173,6 +173,43 @@ def visualize_error_prediction(model, X_sample, y_error_true, sample_idx=0):
     plt.grid(True, alpha=0.3)
     plt.show()
 
+# Error Pattern Analysis
+
+def analyze_error_patterns(df):
+    error_counts = []
+    error_positions = []
+    for i in range(min(1000, len(df))):
+        dna = df['DNA'].iloc[i][:config.MAX_DNA_LENGTH]
+        noisy = df['Noisy_DNA'].iloc[i][:config.MAX_DNA_LENGTH]
+        errors = 0
+        positions = []
+        for j in range(min(len(dna), len(noisy))):
+            if dna[j] != noisy[j]:
+                errors += 1
+                positions.append(j)
+        error_counts.append(errors)
+        error_positions.extend(positions)
+
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.hist(error_counts, bins=20)
+    plt.title('Error Count Distribution')
+    plt.xlabel('Number of Errors per Sequence')
+    plt.ylabel('Frequency')
+    plt.subplot(1, 2, 2)
+    plt.hist(error_positions, bins=50)
+    plt.title('Error Position Distribution')
+    plt.xlabel('Position in DNA Sequence')
+    plt.ylabel('Frequency')
+    plt.tight_layout()
+    plt.show()
+
+    return {
+        'mean_errors': np.mean(error_counts),
+        'median_errors': np.median(error_counts),
+        'max_errors': np.max(error_counts),
+        'error_rate': np.mean(error_counts) / config.MAX_DNA_LENGTH
+    }
 
 
 
