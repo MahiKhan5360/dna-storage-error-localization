@@ -57,6 +57,16 @@ The dataset consists of DNA sequences with 5% induced noise:
 
 ---
 
+## 📈 Training Strategy
+
+- Optimizer: `Adam` with `clipvalue=0.5`  
+- Learning Rate Schedule: Cosine decay with linear warm-up  
+- Early Stopping: Patience = 10 epochs on `val_loss`  
+- Epochs: 50  
+- Batch Size: 64  
+
+---
+
 
 
 
