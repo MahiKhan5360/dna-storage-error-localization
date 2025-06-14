@@ -68,7 +68,7 @@ The dataset consists of DNA sequences with 5% induced noise:
 ---
 
 
-## 🧪 Evaluation Results (Sample Run)
+## 🧪 Evaluation Results 
 
 ```bash
 Bit Error Rate (BER): 0.0213
