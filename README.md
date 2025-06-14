@@ -45,5 +45,18 @@ The dataset consists of DNA sequences with 5% induced noise:
    - Detects mutation positions (shape: 150)
 
 ---
+## 🔍 Metrics & Loss
+
+- **Binary Output**
+  - Loss: Binary Crossentropy  
+  - Metric: Bit Error Rate (BER)
+
+- **Error Localization**
+  - Loss: Focal Loss (class imbalance-aware)  
+  - Metrics: Accuracy, F1-Score
+
+---
+
+
 
 
