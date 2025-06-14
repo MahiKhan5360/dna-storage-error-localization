@@ -68,5 +68,10 @@ The dataset consists of DNA sequences with 5% induced noise:
 ---
 
 
+## 🧪 Evaluation Results 
+
+Bit Error Rate (BER): 0.0213
+Error Localization Accuracy (ELA): 0.9731
+Error Localization F1 Score: 0.8415
 
 
