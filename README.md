@@ -13,4 +13,37 @@ This project implements a hybrid deep learning architecture for **binary decodin
 - 📥 Dataset noise simulation and sequence-level preprocessing
 
 ---
+## 🧪 Dataset
+
+The dataset consists of DNA sequences with 5% induced noise:
+
+- `DNA`: Original reference DNA sequence  
+- `Noisy_DNA`: Mutated DNA after simulated sequencing noise  
+- `Binary`: Corresponding 300-bit binary representation of each sequence  
+
+> 📁 CSV file: `dna_storage_dataset_5percent_noise.csv`  
+> 📏 Sequence Length: 150 bases  
+> 🔢 Binary Length: 300 bits
+
+---
+
+## 🏗️ Model Architecture
+
+### 🔧 Inputs
+- One-hot encoded or index-encoded DNA sequence (`shape=(1, 150)`)
+
+### 🧬 Encoding (Shared)
+- `Embedding + N Transformer Blocks` with Multi-Head Attention  
+- Positional dependencies modeled using attention
+
+### 🧩 Dual Output Heads
+1. **Binary Decoder**
+   - BiLSTM + Dense layers  
+   - Predicts 300-bit binary output (sigmoid activation)
+2. **Error Localization**
+   - BiLSTM + Conv1D layers  
+   - Detects mutation positions (shape: 150)
+
+---
+
 
