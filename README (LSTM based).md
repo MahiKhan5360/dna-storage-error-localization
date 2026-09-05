@@ -1,78 +1,55 @@
-# 🧬 DNAcodec: Hybrid Transformer-BiLSTM-CNN for Noisy DNA Sequence Decoding
+# DNAcodec: Hybrid Transformer-BiLSTM-CNN for Noisy DNA Sequence Decoding
 
-This project implements a hybrid deep learning architecture for **binary decoding and error localization** from **noisy DNA sequences**, tailored for **DNA-based data storage** systems. The model combines **Transformer encoders**, **BiLSTM layers**, and **CNNs** to perform accurate multi-task learning on a synthetic dataset with 5% sequencing noise.
+This project is a hybrid deep learning model for decoding binary data from noisy DNA sequences, built for DNA-based data storage systems. It combines a Transformer encoder, a BiLSTM, and a CNN to do two things at the same time: recover the original binary message and find where the sequencing errors happened.
 
-## 📌 Key Features
+## Key features
 
-- ✅ **Transformer Encoders** to learn contextual relationships in DNA sequences  
-- 🔄 **Bidirectional LSTM** for robust temporal decoding of binary data  
-- 🧠 **CNN** for high-resolution error localization  
-- 📉 **Focal Loss** for handling class imbalance in error detection  
-- 📊 Visualizations for error predictions and training performance  
-- ⚙️ Advanced scheduling: cosine learning rate decay with warm-up  
-- 📥 Dataset noise simulation and sequence-level preprocessing
+- Transformer encoder to learn context between bases in the DNA sequence
+- Bidirectional LSTM for decoding the binary data
+- CNN head for error localization at base-level resolution
+- Focal loss to deal with class imbalance in error detection
+- Cosine learning rate decay with warm-up
+- Simple noise simulation and preprocessing for the synthetic dataset
 
----
-## 🧪 Dataset
+## Dataset
 
-The dataset consists of DNA sequences with 5% induced noise:
+The dataset is synthetic DNA storage data with 5% induced sequencing noise. Each row has:
 
-- `DNA`: Original reference DNA sequence  
-- `Noisy_DNA`: Mutated DNA after simulated sequencing noise  
-- `Binary`: Corresponding 300-bit binary representation of each sequence  
+- `DNA`: the original reference DNA sequence
+- `Noisy_DNA`: the sequence after simulated sequencing noise
+- `Binary`: the 300-bit binary message encoded in that sequence
 
-> 📁 CSV file: `dna_storage_dataset_5percent_noise.csv`  
-> 📏 Sequence Length: 150 bases  
-> 🔢 Binary Length: 300 bits
+File: `dna_storage_dataset_5percent_noise.csv`
+Sequence length: 150 bases
+Binary length: 300 bits
 
----
+## Model architecture
 
-## 🏗️ Model Architecture
+**Input:** one-hot or index-encoded DNA sequence, shape `(1, 150)`
 
-### 🔧 Inputs
-- One-hot encoded or index-encoded DNA sequence (`shape=(1, 150)`)
+**Shared encoder:** embedding layer followed by several Transformer blocks with multi-head attention. Positional relationships between bases are learned through attention, no separate positional encoding trick needed.
 
-### 🧬 Encoding (Shared)
-- `Embedding + N Transformer Blocks` with Multi-Head Attention  
-- Positional dependencies modeled using attention
+The model has two output heads that share this encoder:
 
-### 🧩 Dual Output Heads
-1. **Binary Decoder**
-   - BiLSTM + Dense layers  
-   - Predicts 300-bit binary output (sigmoid activation)
-2. **Error Localization**
-   - BiLSTM + Conv1D layers  
-   - Detects mutation positions (shape: 150)
+1. **Binary decoder head** — BiLSTM followed by dense layers, sigmoid activation, predicts the 300-bit binary output.
+2. **Error localization head** — BiLSTM followed by Conv1D layers, predicts which of the 150 positions were mutated.
 
----
-## 🔍 Metrics & Loss
+## Loss and metrics
 
-- **Binary Output**
-  - Loss: Binary Crossentropy  
-  - Metric: Bit Error Rate (BER)
+- Binary output: binary crossentropy loss, evaluated with Bit Error Rate (BER)
+- Error localization: focal loss (to handle the class imbalance between mutated and non-mutated positions), evaluated with accuracy and F1-score
 
-- **Error Localization**
-  - Loss: Focal Loss (class imbalance-aware)  
-  - Metrics: Accuracy, F1-Score
+## Training setup
 
----
+- Optimizer: Adam, `clipvalue=0.5`
+- Learning rate schedule: cosine decay with a linear warm-up
+- Early stopping on `val_loss`, patience 10
+- 50 epochs, batch size 64
 
-## 📈 Training Strategy
+## Results
 
-- Optimizer: `Adam` with `clipvalue=0.5`  
-- Learning Rate Schedule: Cosine decay with linear warm-up  
-- Early Stopping: Patience = 10 epochs on `val_loss`  
-- Epochs: 50  
-- Batch Size: 64  
-
----
-
-
-## 🧪 Evaluation Results 
-
-```bash
+```
 Bit Error Rate (BER): 0.0213
 Error Localization Accuracy (ELA): 0.9731
 Error Localization F1 Score: 0.8415
-
-
+```
